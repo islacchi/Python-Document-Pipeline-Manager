@@ -1,1 +1,3 @@
 *.pyc
+modules/__pycache__/batchPrinter.cpython-314.pyc
+modules/__pycache__/documentManager.cpython-314.pyc
