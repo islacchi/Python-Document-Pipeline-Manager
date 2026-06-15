@@ -34,12 +34,16 @@ A modular command-line toolkit for processing PDF documents. Run `main.py` to ac
 ```
 project/
 ├── main.py                  ← entry point and main menu
+├── config.py                ← centralized settings for all modules
 └── modules/
-    ├── __init__.py          ← marks modules/ as a Python package
-    ├── pdf_scanner.py       ← scans a drive and copies matching PDFs
-    ├── brand_reader.py      ← extracts brand name fields into Excel
-    └── batch_print.py       ← batch prints PDFs to a physical printer
+    ├── __init__.py          ← marks modules/ as a Python package (intentionally empty)
+    ├── documentManager.py   ← scans a drive and copies matching PDFs
+    ├── brandReader.py        ← extracts brand name fields into Excel
+    └── batchPrinter.py       ← batch prints PDFs to a physical printer
 ```
+
+> Module files use the names above, matching the imports in `main.py`
+> (`modules.documentManager`, `modules.brandReader`, `modules.batchPrinter`).
 
 ---
 
@@ -60,12 +64,12 @@ Install all required packages in one command:
 pip install pypdf pdfplumber openpyxl pywin32
 ```
 
-| Package    | Required by                   | Purpose                              |
-|------------|-------------------------------|--------------------------------------|
-| pypdf      | pdf_scanner, brand_reader     | Primary PDF text extraction          |
-| pdfplumber | pdf_scanner, brand_reader     | Fallback extraction for complex layouts |
-| openpyxl   | brand_reader                  | Writing formatted Excel reports      |
-| pywin32    | batch_print                   | Windows printer spooler access       |
+| Package    | Required by                     | Purpose                              |
+|------------|----------------------------------|---------------------------------------|
+| pypdf      | documentManager, brandReader     | Primary PDF text extraction          |
+| pdfplumber | documentManager, brandReader     | Fallback extraction for complex layouts |
+| openpyxl   | brandReader                      | Writing formatted Excel reports      |
+| pywin32    | batchPrinter                     | Windows printer spooler access       |
 
 ### Optional — OCR Support
 
@@ -80,12 +84,31 @@ You must also install the following external binaries:
 **Tesseract OCR**
 Download: https://github.com/UB-Mannheim/tesseract/wiki
 Default path expected: `C:\Program Files\Tesseract-OCR\tesseract.exe`
-Update `TESSERACT_PATH` in any module that uses OCR if installed elsewhere.
+Update `TESSERACT_PATH` in `config.py` if installed elsewhere.
 
 **Poppler**
 Download: https://github.com/oschwartz10612/poppler-windows/releases
 Default path expected: `C:\poppler-26.02.0\Library\bin`
-Update `POPPLER_PATH` in any module that uses OCR if installed elsewhere.
+Update `POPPLER_PATH` in `config.py` if installed elsewhere.
+
+### Required for Batch Printing — Ghostscript
+
+The Batch Print module uses Ghostscript to send PDFs to the printer, forcing
+a consistent paper size regardless of the source PDF's page size.
+
+Download: https://www.ghostscript.com/releases/gsdnld.html (Windows 64-bit installer)
+
+Default path expected: `C:\Program Files\gs\<version>\bin\gswin64c.exe`
+Update `GHOSTSCRIPT_PATH` in `config.py` to match your installed version —
+the version folder name (e.g. `gs10.07.1`) changes with each release, so
+this must be updated after every Ghostscript upgrade.
+
+> **Licensing note:** Ghostscript is distributed under AGPL or a commercial
+> license. Calling the unmodified `gswin64c.exe` binary via subprocess for
+> internal batch printing is generally considered low-risk under AGPL
+> (no modification or network-service redistribution involved), but if your
+> organization has a formal software compliance process, confirm this usage
+> against it before deploying.
 
 ---
 
@@ -102,13 +125,19 @@ Update `POPPLER_PATH` in any module that uses OCR if installed elsewhere.
    ```
    pip install pytesseract pdf2image
    ```
-   Then install Tesseract and Poppler binaries (see links above) and update the path constants at the top of `pdf_scanner.py` and `brand_reader.py`.
+   Then install Tesseract and Poppler binaries (see links above) and update
+   `TESSERACT_PATH` / `POPPLER_PATH` in `config.py`.
 
-4. For batch printing, install SumatraPDF:
-   Download: https://www.sumatrapdfreader.org/download-free-pdf-viewer
-   Update `SUMATRA_PATH` in `batch_print.py` to match your installation path.
+4. For batch printing, install Ghostscript:
+   Download from https://www.ghostscript.com/releases/gsdnld.html and update
+   `GHOSTSCRIPT_PATH` in `config.py` to match the installed `gswin64c.exe` path.
 
-5. Run the toolkit:
+5. Set `PRINTER_NAME` in `config.py` to the exact printer name as registered
+   in Windows (Settings → Bluetooth & devices → Printers & scanners). This is
+   checked automatically at the start of every batch print run — see
+   [Batch Print](#3-batch-print) below.
+
+6. Run the toolkit:
    ```
    python main.py
    ```
@@ -134,9 +163,12 @@ You will be presented with the following menu:
 =======================================================
 ```
 
-Select an option by typing the number and pressing Enter. After each operation completes, press Enter to return to the menu.
+Select an option by typing the number and pressing Enter. After each
+operation completes, press Enter to return to the menu.
 
-To pre-configure paths so you are not prompted at runtime, set `SEARCH_ROOT` and `DEST_FOLDER` at the top of `pdf_scanner.py`, or `FOLDER_PATH` in `brand_reader.py`. Leave them as empty strings `""` to be prompted each time.
+If a module's dependencies are missing, its menu entry is marked
+`⚠ missing deps` and selecting it prints the required `pip install` command
+instead of running.
 
 ---
 
@@ -144,7 +176,7 @@ To pre-configure paths so you are not prompted at runtime, set `SEARCH_ROOT` and
 
 ---
 
-### 1. PDF Scanner (`modules/pdf_scanner.py`)
+### 1. PDF Scanner (`modules/documentManager.py`)
 
 Recursively walks a drive or folder, identifies PDFs that match a configurable keyword and regex combination, and copies them to a destination folder.
 
@@ -174,8 +206,8 @@ Manufacturer:
 Importer / Distributor:
 ```
 
-To add keywords, append to the `KEYWORDS` list in `pdf_scanner.py`.
-To make matching stricter, raise `MATCH_THRESHOLD`.
+To add keywords, append to the `KEYWORDS` list in `documentManager.py`.
+To make matching stricter, raise `MATCH_THRESHOLD` in `config.py`.
 
 #### Text Extraction Fallback Chain
 
@@ -213,7 +245,7 @@ If a matching file with identical content has already been copied in the current
 
 #### Configuration
 
-All settings are at the top of `pdf_scanner.py`:
+All settings are in `config.py`:
 
 | Setting           | Default | Description                                         |
 |-------------------|---------|-----------------------------------------------------|
@@ -246,14 +278,14 @@ A `scan_results.txt` log is written to the destination folder containing:
 
 ---
 
-### 2. Brand Reader (`modules/brand_reader.py`)
+### 2. Brand Reader (`modules/brandReader.py`)
 
 Scans all PDFs in a single folder and extracts structured regulatory fields into a formatted Excel report.
 
 #### Fields Extracted
 
 | Field            | Pattern matched                                          |
-|------------------|----------------------------------------------------------|
+|------------------|------------------------------------------------------------|
 | Brand Name       | `Brand Name:`                                            |
 | Registration No. | `Registration Number:` / `FDA Registration No.:`        |
 | Valid Until      | `valid until <date>`                                     |
@@ -264,17 +296,17 @@ Scans all PDFs in a single folder and extracts structured regulatory fields into
 
 #### Text Extraction Fallback Chain
 
-Same as pdf_scanner: pypdf → pdfplumber → OCR (Tesseract).
+Same as the PDF Scanner: pypdf → pdfplumber → OCR (Tesseract).
 
 #### Configuration
 
-All settings are at the top of `brand_reader.py`:
+All settings are in `config.py`:
 
 | Setting          | Default | Description                                     |
-|------------------|---------|-------------------------------------------------|
+|------------------|---------|-----------------------------------------------------|
 | `MAX_WORKERS`    | 4       | Parallel worker threads                         |
 | `MAX_PAGES`      | 5       | Maximum pages to scan per PDF                   |
-| `OCR_DPI`        | 300     | DPI for OCR rendering                           |
+| `OCR_DPI_HIGH`   | 300     | DPI for OCR rendering                           |
 | `TEXT_THRESHOLD` | 50      | Minimum characters before trying next extractor |
 | `TESSERACT_PATH` | —       | Full path to `tesseract.exe`                    |
 | `POPPLER_PATH`   | —       | Full path to Poppler `bin` folder               |
@@ -286,7 +318,7 @@ A `brand_results.xlsx` file is written to the scanned folder. If the file alread
 The Excel report is divided into three labeled sections:
 
 | Section   | Contents                                           |
-|-----------|----------------------------------------------------|
+|-----------|--------------------------------------------------|
 | ✔ FOUND   | Files where Brand Name was successfully extracted  |
 | ✘ NOT FOUND | Files processed but Brand Name was not found     |
 | ⚠ ERRORS  | Files that could not be read or caused exceptions  |
@@ -295,32 +327,52 @@ A summary row at the bottom shows total counts for each section.
 
 ---
 
-### 3. Batch Print (`modules/batch_print.py`)
+### 3. Batch Print (`modules/batchPrinter.py`)
 
-Sends all PDFs in a folder to a physical printer in natural sort order with a live dashboard showing real-time print queue state.
+Sends the first page of all PDFs in a folder to a physical printer in natural sort order, with a live dashboard showing real-time print queue state.
 
 > **Windows only.** This module requires `pywin32` and the Windows print spooler. It will not run on macOS or Linux.
 
 #### How It Works
 
-1. PDFs are sorted in natural order (`cert2.pdf` before `cert10.pdf`)
-2. Before sending each file, the module checks the spooler — if `MAX_ACTIVE_JOBS` is already in the queue, it waits
-3. Each file is sent via SumatraPDF in silent mode
-4. The spooler job ID is captured by comparing job lists before and after sending
-5. Completed jobs are detected when their ID disappears from the active spooler
-6. After the last file is sent, a drain loop waits up to `DRAIN_TIMEOUT` seconds for all remaining jobs to clear
+1. On startup, `_validate_environment()` confirms `GHOSTSCRIPT_PATH` points to
+   an existing file and `PRINTER_NAME` matches a printer registered in
+   Windows. If either check fails, the run aborts immediately — on a
+   printer-name mismatch, the actual list of registered printer names is
+   printed so `config.py` can be corrected.
+2. PDFs are sorted in natural order (`cert2.pdf` before `cert10.pdf`)
+3. Before sending each file, the module checks the spooler — if
+   `MAX_ACTIVE_JOBS` is already in the queue, it waits
+4. Page 1 of each file is sent via Ghostscript (`mswinpr2` device) in silent
+   mode. The job is forced to Letter paper and the page content is scaled to
+   fit (`-sPAPERSIZE=letter`, `-dFIXEDMEDIA`, `-dPDFFitPage`), which resolves
+   A4/Letter paper-size mismatches when source PDFs are A4-sized but the
+   printer tray is loaded with Letter
+5. The spooler job ID is captured by comparing job lists before and after
+   sending — if Ghostscript completes the job too quickly for the spooler to
+   register it, the file is marked complete immediately rather than left
+   "in progress" indefinitely
+6. Completed jobs are detected when their ID disappears from the active spooler
+7. After the last file is sent, a drain loop waits up to `DRAIN_TIMEOUT`
+   seconds for all remaining jobs to clear
 
 #### Configuration
 
-All settings are at the top of `batch_print.py`:
+All settings are in `config.py`:
 
-| Setting          | Default                      | Description                                    |
-|------------------|------------------------------|------------------------------------------------|
-| `PRINTER_NAME`   | FUJI XEROX DocuPrint M455 df | Exact printer name as shown in Windows         |
-| `SUMATRA_PATH`   | —                            | Full path to `SumatraPDF.exe`                  |
-| `MAX_ACTIVE_JOBS`| 2                            | Maximum concurrent spooler jobs before waiting |
+| Setting            | Default                | Description                                    |
+|--------------------|-------------------------|--------------------------------------------------|
+| `PRINTER_NAME`     | `DocuPrint M455 df`     | Exact printer name as registered in Windows — verified automatically at the start of every run |
+| `GHOSTSCRIPT_PATH` | —                       | Full path to `gswin64c.exe` (e.g. `C:\Program Files\gs\gs10.07.1\bin\gswin64c.exe`) |
+| `MAX_ACTIVE_JOBS`  | 2                       | Maximum concurrent spooler jobs before waiting |
 
-To find your exact printer name: open **Control Panel → Devices and Printers** and copy the name exactly as displayed, including spacing and capitalization.
+To find the exact printer name: open **Settings → Bluetooth & devices →
+Printers & scanners**, click the printer, and copy the name exactly as
+displayed. If `PRINTER_NAME` doesn't match, the next run will print the full
+list of registered names so you can correct it.
+
+> `SUMATRA_PATH` remains defined in `config.py` for backward compatibility
+> but is no longer used by `batchPrinter`.
 
 #### Output
 
@@ -330,69 +382,77 @@ A `print_history.txt` log is written to the PDF source folder on completion, lis
 
 ## Adding a New Module
 
-1. Create `modules/your_module.py` with a `run()` function:
+1. Create `modules/yourModule.py` with a `run()` function:
    ```python
    def run(folder_path: str) -> None:
        # your logic here
    ```
 
-2. Import it in `main.py`:
+2. In `main.py`, import it with `_try_import` (returns `None` if dependencies are missing, rather than crashing):
    ```python
-   import modules.your_module as your_module
+   your_module = _try_import("modules.yourModule")
    ```
 
-3. Add a menu label to the `MENU` list in `main.py`:
+3. Add an entry to `MENU_ENTRIES`:
    ```python
-   MENU = [
+   MENU_ENTRIES = [
        ...
-       "Your feature description     (your_module)",
+       (
+           "Your feature description                (your_module)",
+           your_module,
+           "launch_your_module",
+       ),
    ]
    ```
 
-4. Add a launcher function in `main.py`:
+4. Add a launcher function, including a missing-dependency check:
    ```python
    def launch_your_module():
+       if your_module is None:
+           _missing_deps_notice("yourModule", "required-package")
+           return
        print("\n── Your Module ──────────────────────────────────────")
        folder = prompt_path("Enter folder path", must_exist=True)
        your_module.run(folder)
    ```
 
-5. Append the launcher to the `LAUNCHERS` list:
-   ```python
-   LAUNCHERS = [
-       ...
-       launch_your_module,
-   ]
-   ```
-
-Menu numbering updates automatically. `MENU` and `LAUNCHERS` must always have the same number of entries and be in the same order.
+Menu numbering updates automatically based on `MENU_ENTRIES`'s order and length.
 
 ---
 
 ## Troubleshooting
 
-**`ImportError: cannot import name 'pdf_scanner' from 'modules'`**
-Use `import modules.pdf_scanner as pdf_scanner` instead of `from modules import pdf_scanner`. The `__init__.py` is intentionally empty — modules must be imported by full path.
+**Menu entry shows `⚠ missing deps`**
+The corresponding module's dependencies aren't installed. Selecting the entry prints the required `pip install` command — run it and restart `main.py`.
 
 **`ModuleNotFoundError: No module named 'win32print'`**
-Run `pip install pywin32`. This is required for `batch_print` only.
+Run `pip install pywin32`. This is required for Batch Print only.
 
 **`ModuleNotFoundError: No module named 'pytesseract'`**
 OCR is optional. If not installed, the toolkit falls back to text-only extraction. Install with `pip install pytesseract pdf2image` only if your PDFs are scanned images.
 
 **PDF scanner finds no matches**
 - Confirm your PDFs contain one of the three certificate title keywords
-- Lower `MATCH_THRESHOLD` to `1` in `pdf_scanner.py` temporarily to test keyword-only matching
+- Lower `MATCH_THRESHOLD` to `1` in `config.py` temporarily to test keyword-only matching
 - If PDFs are scanned images, ensure OCR is installed and `OCR_DPI` is at least 200
 
 **Brand reader returns empty fields**
 - The field labels in the PDF must match the regex patterns (e.g. `Brand Name:`, `Manufacturer:`)
 - Check if the PDF is image-based — if so, OCR must be installed
-- Raise `OCR_DPI` to `300` in `brand_reader.py` for better accuracy on low-quality scans
+- `OCR_DPI_HIGH` (default 300) is used for brand extraction; raise it for low-quality scans
+
+**`❌ Ghostscript not found at: ...`**
+Update `GHOSTSCRIPT_PATH` in `config.py` — the version folder name (e.g. `gs10.07.1`) changes with each Ghostscript release, so this needs updating after upgrades.
+
+**`❌ Printer 'X' not found in Windows printer list.`**
+`PRINTER_NAME` in `config.py` doesn't exactly match a printer registered in Windows. The error prints the full list of available names — copy the exact string (including any manufacturer prefix) into `PRINTER_NAME`.
+
+**A small window showing a percentage briefly appears for each printed file**
+This is the printer driver's own status display during the Ghostscript job. It closes automatically once the job is sent and does not block the batch loop.
 
 **Batch print sends jobs but dashboard shows no completion**
-- Verify `PRINTER_NAME` matches exactly what appears in Control Panel → Devices and Printers
-- Some printer drivers clear jobs from the spooler immediately after accepting them — the drain loop may time out harmlessly; check the physical printer for output
+- Verify `PRINTER_NAME` matches exactly (see above)
+- Ghostscript jobs may clear from the spooler before `EnumJobs` ever sees them — the dashboard handles this by marking such files complete immediately; check the physical printer for output to confirm
 
 **Printer spooler is unreachable**
 `safe_get_jobs()` will retry 3 times with a 5-second delay between attempts before returning an empty job list. If the printer is consistently unreachable, check that the print spooler service is running: `services.msc` → Print Spooler → Started.
@@ -401,8 +461,9 @@ OCR is optional. If not installed, the toolkit falls back to text-only extractio
 
 ## Notes
 
-- `MOVE_FILES = False` by default in `pdf_scanner.py`. Always verify results in copy mode first.
-- `batch_print.py` is Windows-only. It will not run on macOS or Linux.
+- `MOVE_FILES = False` by default. Always verify results in copy mode first.
+- `batchPrinter.py` is Windows-only. It will not run on macOS or Linux.
 - OCR is optional across all modules. Missing `pytesseract`/`pdf2image` prints a warning but does not prevent the toolkit from running.
-- All state in `batch_print` is scoped to each `run()` call — running batch print twice in one session starts completely clean.
-- The destination folder in `pdf_scanner` is automatically excluded from the walk even when it is inside the search root, preventing an infinite copy loop.
+- All state in `batchPrinter` is scoped to each `run()` call — running batch print twice in one session starts completely clean.
+- The destination folder in the PDF Scanner is automatically excluded from the walk even when it is inside the search root, preventing an infinite copy loop.
+- Batch Print prints only **page 1** of each PDF by design (`-dFirstPage=1 -dLastPage=1`), intended for cover-page/letterhead printing rather than full-document printing.
