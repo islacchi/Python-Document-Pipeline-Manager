@@ -12,7 +12,7 @@ logging.basicConfig(
 logger = logging.getLogger("toolkit")
 
 # ── Config ─────────────────────────────────────────────────────────────────────
-import config  # noqa: E402  — centralised paths & constants
+import config  # noqa: E402, F401
 
 # ── Module registry ───────────────────────────────────────────────────────────
 # To add a new feature:

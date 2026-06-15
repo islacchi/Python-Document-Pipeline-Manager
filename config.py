@@ -22,7 +22,7 @@ import os
 # ============================================================
 TESSERACT_PATH = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
 POPPLER_PATH   = r"C:\poppler-26.02.0\Library\bin"
-SUMATRA_PATH   = r"C:\Users\primelink\AppData\Local\SumatraPDF\SumatraPDF.exe"
+GHOSTSCRIPT_PATH = r"C:\Program Files\gs\gs10.07.1\bin\gswin64c.exe"
 
 # ============================================================
 #  PDF PROCESSING DEFAULTS
@@ -55,7 +55,7 @@ BRAND_LOG_FILE = "brand_results.xlsx"
 # ============================================================
 #  BATCH PRINTER SETTINGS
 # ============================================================
-PRINTER_NAME    = "FUJI XEROX DocuPrint M455 df"
+PRINTER_NAME    = "DocuPrint M455 df"
 MAX_ACTIVE_JOBS = 2
 
 # ============================================================

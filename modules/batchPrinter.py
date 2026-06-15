@@ -4,13 +4,7 @@ import subprocess
 import re
 
 
-# ============================================================
-#  CONFIGURATION
-# ============================================================
-PRINTER_NAME   = "FUJI XEROX DocuPrint M455 df"
-SUMATRA_PATH   = r"C:\Users\primelink\AppData\Local\SumatraPDF\SumatraPDF.exe"
-MAX_ACTIVE_JOBS = 2
-# ============================================================
+from config import PRINTER_NAME, GHOSTSCRIPT_PATH, MAX_ACTIVE_JOBS
 
 try:
     import win32print
@@ -25,13 +19,22 @@ def natural_sort_key(text: str):
     return [int(c) if c.isdigit() else c.lower() for c in re.split(r'(\d+)', text)]
 
 def print_pdf(pdf_path: str) -> None:
-    subprocess.run([
-        SUMATRA_PATH,
-        "-print-to", PRINTER_NAME,
-        "-print-settings", "1",
-        "-silent",
+    result = subprocess.run([
+        GHOSTSCRIPT_PATH,
+        "-q",
+        "-dPrinted", "-dBATCH", "-dNOPAUSE", "-dSAFER",
+        "-sDEVICE=mswinpr2",
+        f"-sOutputFile=%printer%{PRINTER_NAME}",
+        "-sPAPERSIZE=letter",
+        "-dFIXEDMEDIA",
+        "-dPDFFitPage",
+        "-dFirstPage=1", "-dLastPage=1",
         pdf_path
-    ], check=True)
+    ], capture_output=True, text=True)
+    if result.returncode != 0:
+        err_msg = result.stderr.strip() or result.stdout.strip() or f"Exit code {result.returncode}"
+        print(f"⚠️  Ghostscript error: {err_msg}")
+        raise subprocess.CalledProcessError(result.returncode, result.args, stderr=result.stderr)
 
 def get_jobs() -> list:
     h = win32print.OpenPrinter(PRINTER_NAME)
@@ -117,13 +120,40 @@ def check_completed_jobs(pdfs: list, tracking: dict, completed_files: list,
                 completed_files.insert(idx, file)
 
 # ── Entry point ───────────────────────────────────────────────────────────────
+def _validate_environment() -> bool:
+    """Verify Ghostscript and the target printer exist before starting a batch run."""
+    if not os.path.isfile(GHOSTSCRIPT_PATH):
+        print(f"❌ Ghostscript not found at: {GHOSTSCRIPT_PATH}")
+        print("   Update GHOSTSCRIPT_PATH in config.py to match your installed version.")
+        return False
+
+    try:
+        printers = [p[2] for p in win32print.EnumPrinters(
+            win32print.PRINTER_ENUM_LOCAL | win32print.PRINTER_ENUM_CONNECTIONS, None, 1
+        )]
+    except Exception as e:
+        print(f"❌ Could not enumerate printers: {e}")
+        return False
+
+    if PRINTER_NAME not in printers:
+        print(f"❌ Printer '{PRINTER_NAME}' not found in Windows printer list.")
+        print("   Available printers:")
+        for p in printers:
+            print(f"     - {p}")
+        print("   Update PRINTER_NAME in config.py to match exactly.")
+        return False
+
+    return True
+    
 
 def run(pdf_folder: str) -> None:
     if not WIN32_AVAILABLE:
         print("Error: pywin32 is required for batch printing. Run: pip install pywin32")
         return
+    
+    if not _validate_environment():
+        return
 
-    # State is local to this run() call — safe for repeated menu invocations
     tracking: dict        = {}
     completed_files: list = []
 
@@ -174,7 +204,6 @@ def run(pdf_folder: str) -> None:
             render_dashboard(pdfs, total, completed_files, tracking, jobs)
             check_completed_jobs(pdfs, tracking, completed_files, jobs)
 
-    # ── Final drain ───────────────────────────────────────────
     drain_start   = time.time()
     DRAIN_TIMEOUT = 120
 
