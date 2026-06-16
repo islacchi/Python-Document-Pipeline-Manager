@@ -19,8 +19,8 @@ STATUS_SENDING = "SENDING"
 STATUS_DONE    = "DONE"
 STATUS_FAILED  = "FAILED"
 
-INTER_JOB_DELAY = 2   # seconds between dispatches — prevents printer flooding
-DRAIN_TIMEOUT   = 60  # seconds to wait for spooler to clear after last job
+INTER_JOB_DELAY = 0.5  # breath between fast back-to-back dispatches; skipped when spooler was full
+DRAIN_TIMEOUT   = 60   # seconds to wait for spooler to clear after last job
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -193,12 +193,18 @@ def _validate_environment() -> bool:
 
 # ── Spooler slot gate ─────────────────────────────────────────────────────────
 
-def wait_for_slot(pdfs: list, statuses: dict) -> list:
-    """Block until a spooler slot is free, refreshing the dashboard while waiting."""
+def wait_for_slot(pdfs: list, statuses: dict) -> tuple[list, bool]:
+    """
+    Block until a spooler slot is free, refreshing the dashboard while waiting.
+    Returns (jobs, had_to_wait) — caller uses had_to_wait to decide whether
+    a post-dispatch breath is needed to prevent burst flooding.
+    """
+    had_to_wait = False
     while True:
         jobs = safe_get_jobs()
         if len(jobs) < MAX_ACTIVE_JOBS:
-            return jobs
+            return jobs, had_to_wait
+        had_to_wait = True
         render_dashboard(pdfs, statuses, jobs)
         time.sleep(1)
 
@@ -226,7 +232,7 @@ def run(pdf_folder: str) -> None:
     for file in pdfs:
         full_path = os.path.join(pdf_folder, file)
 
-        jobs = wait_for_slot(pdfs, statuses)
+        jobs, had_to_wait = wait_for_slot(pdfs, statuses)
 
         statuses[file] = STATUS_SENDING
         render_dashboard(pdfs, statuses, jobs)
@@ -240,8 +246,10 @@ def run(pdf_folder: str) -> None:
         jobs = safe_get_jobs()
         render_dashboard(pdfs, statuses, jobs)
 
-        # Throttle — give the printer breathing room between dispatches
-        time.sleep(INTER_JOB_DELAY)
+        # Only breathe when the slot was free immediately — if we had to wait,
+        # the printer already caught up and no extra delay is needed.
+        if not had_to_wait:
+            time.sleep(INTER_JOB_DELAY)
 
     # ── Final drain ───────────────────────────────────────────────────────────
     drain_start = time.time()
