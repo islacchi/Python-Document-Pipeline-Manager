@@ -30,9 +30,10 @@ def _try_import(module_path: str):
         return None
 
 
-pdf_scanner  = _try_import("modules.documentManager")
-brand_reader = _try_import("modules.brandReader")
-batch_print  = _try_import("modules.batchPrinter")
+pdf_scanner   = _try_import("modules.documentManager")
+brand_reader  = _try_import("modules.brandReader")
+batch_print   = _try_import("modules.batchPrinter")
+config_editor = _try_import("modules.configEditor")
 
 # ── Menu definitions ──────────────────────────────────────────────────────────
 # Each entry is (label, module_or_None, launcher_func_or_None).
@@ -52,6 +53,11 @@ MENU_ENTRIES = [
         "Batch print PDFs to printer             (batch_print)",
         batch_print,
         "launch_batch_print",
+    ),
+    (
+        "Configure Toolkit Settings              (config_editor)",
+        config_editor,
+        "launch_config_editor",
     ),
 ]
 
@@ -109,6 +115,13 @@ def launch_batch_print():
     print("\n── Batch Print ──────────────────────────────────────")
     folder = prompt_path("Enter folder containing PDFs to print", must_exist=True)
     batch_print.run(folder)
+
+
+def launch_config_editor():
+    if config_editor is None:
+        _missing_deps_notice("configEditor", "")
+        return
+    config_editor.run()
 
 
 def _missing_deps_notice(module_name: str, packages: str) -> None:
