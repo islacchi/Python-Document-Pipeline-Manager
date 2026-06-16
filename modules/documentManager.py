@@ -6,6 +6,12 @@ import hashlib
 from datetime import datetime
 from concurrent.futures import ProcessPoolExecutor, as_completed, TimeoutError as FuturesTimeout
 
+# Dynamic path config resolution
+try:
+    import config
+except ImportError:
+    sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    import config
 
 missing = []
 try:
@@ -21,21 +27,21 @@ if missing:
 # ============================================================
 #  CONFIGURATION
 # ============================================================
-SEARCH_ROOT     = ""       # Drive/folder to scan. Leave empty to be prompted.
-DEST_FOLDER     = ""       # Where matched PDFs go. Leave empty to be prompted.
-LOG_FILE        = "scan_results.txt"
-MAX_WORKERS     = 4        # Parallel workers (ProcessPool — bypasses GIL for CPU work)
-MAX_PAGES       = 5        # Max pages to scan per PDF
-TEXT_THRESHOLD  = 50       # Min chars before trying next extraction method
-FILE_TIMEOUT    = 30       # Seconds before giving up on a single PDF
-MIN_FILE_SIZE   = 1_024    # Skip PDFs smaller than 1 KB (likely empty/corrupt)
-MAX_FILE_SIZE   = 0        # Skip PDFs larger than this in bytes. 0 = no limit.
-MOVE_FILES      = False    # True = move, False = copy (safer for testing)
-SKIP_HIDDEN     = True     # Skip hidden/system folders
-SKIP_DUPLICATES = True     # Skip files whose content was already copied
-TESSERACT_PATH  = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
-POPPLER_PATH    = r"C:\poppler-26.02.0\Library\bin"
-OCR_DPI         = 150      # Reduced from 300 — still readable, ~4x faster render
+SEARCH_ROOT     = config.SEARCH_ROOT
+DEST_FOLDER     = config.DEST_FOLDER
+LOG_FILE        = config.SCAN_LOG_FILE
+MAX_WORKERS     = config.MAX_WORKERS
+MAX_PAGES       = config.MAX_PAGES
+TEXT_THRESHOLD  = config.TEXT_THRESHOLD
+FILE_TIMEOUT    = config.FILE_TIMEOUT
+MIN_FILE_SIZE   = config.MIN_FILE_SIZE
+MAX_FILE_SIZE   = config.MAX_FILE_SIZE
+MOVE_FILES      = config.MOVE_FILES
+SKIP_HIDDEN     = config.SKIP_HIDDEN
+SKIP_DUPLICATES = config.SKIP_DUPLICATES
+TESSERACT_PATH  = config.TESSERACT_PATH
+POPPLER_PATH    = config.POPPLER_PATH
+OCR_DPI         = config.OCR_DPI
 # ============================================================
 
 try:
@@ -66,7 +72,7 @@ MATCHERS = [
 ]
 
 # How many regex patterns must match (in addition to all keywords)
-MATCH_THRESHOLD = 2
+MATCH_THRESHOLD = config.MATCH_THRESHOLD
 
 
 # ── Per-page early exit ──────────────────────────────────────────────────────

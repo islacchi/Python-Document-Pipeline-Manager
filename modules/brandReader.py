@@ -4,6 +4,12 @@ import os
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+# Dynamic path config resolution
+try:
+    import config
+except ImportError:
+    sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    import config
 
 missing = []
 try:
@@ -25,12 +31,12 @@ if missing:
 # ============================================================
 #  CONFIGURATION
 # ============================================================
-MAX_WORKERS    = 4
-MAX_PAGES      = 5
-OCR_DPI        = 300
-TEXT_THRESHOLD = 50
-TESSERACT_PATH = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
-POPPLER_PATH   = r"C:\poppler-26.02.0\Library\bin"
+MAX_WORKERS    = config.MAX_WORKERS
+MAX_PAGES      = config.MAX_PAGES
+OCR_DPI        = config.OCR_DPI_HIGH
+TEXT_THRESHOLD = config.TEXT_THRESHOLD
+TESSERACT_PATH = config.TESSERACT_PATH
+POPPLER_PATH   = config.POPPLER_PATH
 # ============================================================
 
 try:
@@ -276,7 +282,7 @@ def write_excel(log_path: str, folder_path: str, pdf_files: list, results: dict)
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 def run(folder_path: str) -> None:
-    LOG_FILE = "brand_results.xlsx"
+    LOG_FILE = config.BRAND_LOG_FILE
     base, ext = os.path.splitext(LOG_FILE)
     log_path = os.path.join(folder_path, LOG_FILE)
     counter = 1
