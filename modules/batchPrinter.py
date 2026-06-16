@@ -22,6 +22,29 @@ STATUS_FAILED  = "FAILED"
 INTER_JOB_DELAY = 0.5  # breath between fast back-to-back dispatches; skipped when spooler was full
 DRAIN_TIMEOUT   = 60   # seconds to wait for spooler to clear after last job
 
+# ── Ghostscript error translation ─────────────────────────────────────────────
+
+_GS_ERROR_MAP = {
+    "invalidfileaccess" : "File could not be opened — check if it is locked or access is denied",
+    "undefinedfilename" : "File not found — path may have changed or been deleted",
+    "ioerror"           : "File read error — file may be corrupted or on an unavailable network path",
+    "syntaxerror"       : "PDF is malformed or corrupted and could not be parsed",
+    "undefined"         : "PDF contains unsupported content or references",
+    "invalidaccess"     : "PDF is password-protected or has printing restrictions",
+    "stackunderflow"    : "PDF structure is invalid — file may be incomplete",
+    "typecheck"         : "PDF contains unexpected data types — file may be corrupted",
+}
+
+def _translate_gs_error(raw: str) -> str:
+    """Map a raw Ghostscript error string to a plain-language message."""
+    raw_lower = raw.lower()
+    for key, message in _GS_ERROR_MAP.items():
+        if key in raw_lower:
+            return message
+    if "mswinpr2" in raw_lower:
+        return "Printer rejected the job — check spooler and printer status"
+    return f"Ghostscript error: {raw.splitlines()[0]}" if raw else "Unknown error"
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def natural_sort_key(text: str):
@@ -82,7 +105,7 @@ def safe_get_jobs(retries: int = 3) -> list:
 def clear_screen() -> None:
     subprocess.call("cls", shell=True)
 
-def log_history(pdf_folder: str, statuses: dict) -> str:
+def log_history(pdf_folder: str, statuses: dict, errors: dict) -> str:
     """Write a non-overwriting print history log. Returns the path written."""
     log_path = _unique_log_path(pdf_folder)
     sent   = [f for f, s in statuses.items() if s == STATUS_DONE]
@@ -98,7 +121,9 @@ def log_history(pdf_folder: str, statuses: dict) -> str:
         if failed:
             fh.write(f"\nFailed ({len(failed)}):\n")
             for i, name in enumerate(failed, 1):
+                reason = errors.get(name, "Unknown error")
                 fh.write(f"   {i}. {name}\n")
+                fh.write(f"      Reason: {reason}\n")
         if not sent and not failed:
             fh.write("   (none)\n")
     return log_path
@@ -228,6 +253,7 @@ def run(pdf_folder: str) -> None:
         return
 
     statuses: dict = {pdf: STATUS_PENDING for pdf in pdfs}
+    errors:   dict = {}
 
     for file in pdfs:
         full_path = os.path.join(pdf_folder, file)
@@ -240,8 +266,12 @@ def run(pdf_folder: str) -> None:
         try:
             print_pdf(full_path)
             statuses[file] = STATUS_DONE
-        except Exception:
+        except subprocess.CalledProcessError as e:
             statuses[file] = STATUS_FAILED
+            errors[file]   = _translate_gs_error(e.stderr or "")
+        except Exception as e:
+            statuses[file] = STATUS_FAILED
+            errors[file]   = f"Unexpected error: {type(e).__name__}"
 
         jobs = safe_get_jobs()
         render_dashboard(pdfs, statuses, jobs)
@@ -288,8 +318,10 @@ def run(pdf_folder: str) -> None:
         print()
         print("  Failed:")
         for i, name in enumerate(failed_files, 1):
+            reason = errors.get(name, "Unknown error")
             print(f"    {i}. {name}")
+            print(f"       {reason}")
 
     # ── Log ───────────────────────────────────────────────────────────────────
-    log_path = log_history(pdf_folder, statuses)
+    log_path = log_history(pdf_folder, statuses, errors)
     print(f"\n  Log saved to: {log_path}")
