@@ -23,6 +23,7 @@ A modular command-line toolkit for processing PDF documents. Run `main.py` to ac
   - [1. PDF Scanner](#1-pdf-scanner)
   - [2. Brand Reader](#2-brand-reader)
   - [3. Batch Print](#3-batch-print)
+  - [4. Configuration Editor](#4-configuration-editor)
 - [Adding a New Module](#adding-a-new-module)
 - [Troubleshooting](#troubleshooting)
 - [Notes](#notes)
@@ -39,11 +40,12 @@ project/
     ├── __init__.py          ← marks modules/ as a Python package (intentionally empty)
     ├── documentManager.py   ← scans a drive and copies matching PDFs
     ├── brandReader.py        ← extracts brand name fields into Excel
-    └── batchPrinter.py       ← batch prints PDFs to a physical printer
+    ├── batchPrinter.py       ← batch prints PDFs to a physical printer
+    └── configEditor.py       ← interactive configuration settings editor
 ```
 
 > Module files use the names above, matching the imports in `main.py`
-> (`modules.documentManager`, `modules.brandReader`, `modules.batchPrinter`).
+> (`modules.documentManager`, `modules.brandReader`, `modules.batchPrinter`, `modules.configEditor`).
 
 ---
 
@@ -125,17 +127,19 @@ this must be updated after every Ghostscript upgrade.
    ```
    pip install pytesseract pdf2image
    ```
-   Then install Tesseract and Poppler binaries (see links above) and update
-   `TESSERACT_PATH` / `POPPLER_PATH` in `config.py`.
+    Then install Tesseract and Poppler binaries (see links above) and update
+    `TESSERACT_PATH` / `POPPLER_PATH` in `config.py` (or use the interactive
+    Configuration Editor in `main.py` to set them).
 
 4. For batch printing, install Ghostscript:
    Download from https://www.ghostscript.com/releases/gsdnld.html and update
-   `GHOSTSCRIPT_PATH` in `config.py` to match the installed `gswin64c.exe` path.
+   `GHOSTSCRIPT_PATH` in `config.py` to match the installed `gswin64c.exe` path
+   (or set it via the Configuration Editor).
 
 5. Set `PRINTER_NAME` in `config.py` to the exact printer name as registered
-   in Windows (Settings → Bluetooth & devices → Printers & scanners). This is
-   checked automatically at the start of every batch print run — see
-   [Batch Print](#3-batch-print) below.
+   in Windows (Settings → Bluetooth & devices → Printers & scanners). This can
+   also be adjusted via the Configuration Editor. This is checked automatically
+   at the start of every batch print run — see [Batch Print](#3-batch-print) below.
 
 6. Run the toolkit:
    ```
@@ -159,6 +163,7 @@ You will be presented with the following menu:
   1. Scan drive and copy matching PDFs       (pdf_scanner)
   2. Extract brand names to Excel            (brand_reader)
   3. Batch print PDFs to printer             (batch_print)
+  4. Configure Toolkit Settings              (config_editor)
   0. Exit
 =======================================================
 ```
@@ -377,6 +382,29 @@ list of registered names so you can correct it.
 #### Output
 
 A `print_history.txt` log is written to the PDF source folder on completion, listing all printed files in order. Files that failed to send are tagged with `[FAILED]`.
+
+---
+
+### 4. Configuration Editor (`modules/configEditor.py`)
+
+An interactive, menu-driven CLI configuration editor. It allows you to view, validate, and customize all toolkit settings dynamically without manually editing Python files.
+
+#### Key Features
+
+- **Interactive Menus**: Settings are organized into 5 logical categories (Global/Concurrency, PDF Scanner, Brand Reader, Batch Printer, and OCR Engine).
+- **Automatic Validation**: Validates user inputs on the fly (e.g., checks if specified paths exist, verifies non-negative integers, and converts boolean inputs).
+- **Persistent Overrides**: Saves configuration overrides to `config_local.json` in the project root. This file is automatically loaded by `config.py` so customized settings persist across runs.
+- **In-Memory Session Sync**: Changed settings are synced in-memory dynamically in real-time to already-loaded pipeline modules during the active toolkit session.
+
+#### Configuration Categories
+
+| Category | Description | Key Settings Managed |
+|---|---|---|
+| **1. Global & Concurrency Settings** | General execution limits. | `MAX_WORKERS`, `MAX_PAGES` |
+| **2. PDF Scanner Settings** | PDF scanning paths and thresholds. | `SEARCH_ROOT`, `DEST_FOLDER`, `SCAN_LOG_FILE`, `MATCH_THRESHOLD`, `MOVE_FILES`, `SKIP_DUPLICATES`, `SKIP_HIDDEN`, `MIN_FILE_SIZE`, `MAX_FILE_SIZE`, `FILE_TIMEOUT` |
+| **3. Brand Reader Settings** | Brand reader extraction reporting. | `BRAND_LOG_FILE` |
+| **4. Batch Printer Settings** | Printer target configuration. | `PRINTER_NAME`, `MAX_ACTIVE_JOBS`, `GHOSTSCRIPT_PATH` |
+| **5. OCR Engine Settings** | External binaries and OCR DPI. | `TESSERACT_PATH`, `POPPLER_PATH`, `OCR_DPI`, `OCR_DPI_HIGH`, `TEXT_THRESHOLD` |
 
 ---
 
