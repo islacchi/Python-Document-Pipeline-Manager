@@ -19,6 +19,7 @@ A modular command-line toolkit for processing PDF documents. Run `main.py` to ac
 - [Requirements](#requirements)
 - [Installation](#installation)
 - [How to Run](#how-to-run)
+- [Building a Standalone Executable](#building-a-standalone-executable)
 - [Modules](#modules)
   - [1. PDF Scanner](#1-pdf-scanner)
   - [2. Brand Reader](#2-brand-reader)
@@ -174,6 +175,144 @@ operation completes, press Enter to return to the menu.
 If a module's dependencies are missing, its menu entry is marked
 `⚠ missing deps` and selecting it prints the required `pip install` command
 instead of running.
+
+---
+
+## Building a Standalone Executable
+
+For deployment to machines that shouldn't need Python, pip, or any of the
+external OCR/print tools manually installed, the toolkit can be packaged
+into a self-contained folder via PyInstaller. The end result runs with a
+double-click — no dependencies, no setup, on any Windows machine.
+
+> This packages the **whole toolkit as one unit**. There is no per-module
+> packaging — `main.py` and all four feature modules are bundled together.
+
+### What Gets Bundled
+
+| Layer                         | How it's included                                                  |
+|--------------------------------|----------------------------------------------------------------------|
+| Python interpreter + this codebase | Bundled automatically by PyInstaller                          |
+| pip dependencies (pypdf, pdfplumber, openpyxl, pywin32, pytesseract, pdf2image) | Bundled automatically by PyInstaller |
+| Tesseract, Poppler, Ghostscript | **Not** picked up automatically — these are external programs, not Python packages. Must be manually copied into `vendor/` (see below) before building |
+
+### 1. Populate `vendor/`
+
+Create this structure at the project root, copying from wherever you
+already have each tool installed (or a fresh download):
+
+```
+vendor/
+├── tesseract/          ← entire Tesseract-OCR install folder
+│   ├── tesseract.exe
+│   ├── tessdata/       ← must include at least eng.traineddata
+│   └── *.dll
+├── poppler/
+│   └── bin/            ← entire Library\bin folder (pdftoppm.exe + its DLLs)
+└── ghostscript/        ← entire gs<version> install folder
+    ├── bin/            ← gswin64c.exe + gsdll64.dll (the exe alone will not run without this DLL)
+    ├── lib/
+    └── Resource/
+```
+
+Copy the **whole** install folder for each tool, not just the single
+`.exe` — each depends on sibling DLLs, data files, or resource folders to
+function:
+
+```
+robocopy "C:\Program Files\Tesseract-OCR"        vendor\tesseract   /E
+robocopy "C:\poppler-26.02.0\Library\bin"         vendor\poppler\bin /E
+robocopy "C:\Program Files\gs\gs10.07.1"          vendor\ghostscript /E
+```
+
+Adjust the source paths above to wherever these are actually installed on
+your machine — confirm with `dir` before copying rather than assuming the
+`config.py` defaults match your install.
+
+`vendor/` is excluded from git (see `.gitignore`) — it's fetched/copied
+fresh per machine that builds the exe, not tracked as source.
+
+### 2. How Path Resolution Works
+
+`config.py` resolves `TESSERACT_PATH`, `POPPLER_PATH`, and
+`GHOSTSCRIPT_PATH` relative to a `BASE_DIR`:
+
+- When running from source (`python main.py`), `BASE_DIR` is the project
+  folder, and if `vendor/` isn't present there, the original hardcoded
+  `C:\Program Files\...` paths are used as a fallback — so a dev machine
+  with these tools already installed the normal way still works
+  unmodified.
+- When running as the built exe, `BASE_DIR` is the folder the `.exe`
+  itself lives in (via `sys.executable`), so it looks for `vendor/`
+  sitting next to the `.exe`.
+
+`config_local.json` (written by the Configuration Editor) is also resolved
+against this same `BASE_DIR`, so saved settings persist correctly next to
+the exe rather than being lost.
+
+> **Do not build with `--onefile`.** A one-file exe extracts everything —
+> including where `config_local.json` would be written — into a temporary
+> folder that PyInstaller deletes on exit, silently discarding every
+> setting saved through the Configuration Editor on each run. The build
+> below uses `--onedir`, which keeps a stable, persistent folder instead.
+
+### 3. Build
+
+Requires PyInstaller in addition to the toolkit's normal dependencies:
+```
+pip install pyinstaller pywin32 pypdf pdfplumber pdf2image pytesseract openpyxl
+```
+
+Run `build.bat` from the project root (PowerShell requires the `.\` prefix
+to run a script from the current folder: `.\build.bat`). It will:
+
+1. Clean any previous `build/`/`dist/` output
+2. Run PyInstaller (`--onedir --console`, with `--collect-submodules
+   modules` so the four feature modules — which `main.py` imports
+   dynamically by string via `importlib`, not a static `import` statement
+   PyInstaller can trace on its own — are actually included)
+3. Copy `vendor/` into the built output, so the result needs nothing
+   installed on the target machine
+
+Result:
+```
+dist/PDF-Toolkit/
+├── PDF-Toolkit.exe
+├── vendor/           ← copied in by build.bat
+└── _internal/        ← PyInstaller's bundled Python runtime + dependencies
+```
+
+> If `pyinstaller`/`PyInstaller` isn't recognized as a command even after
+> installing it, invoke it as a module instead — `build.bat` already does
+> this: `python -m PyInstaller ...`. Python's import system is
+> case-sensitive even on Windows, so the package must be referenced as
+> `PyInstaller`, not `pyinstaller`, when invoked this way.
+
+### 4. Distribute
+
+Copy the **entire** `dist/PDF-Toolkit/` folder as one unit — not just the
+`.exe` — to the target machine (zip it for easier transfer). `.exe`,
+`vendor/`, and `_internal/` all depend on each other; none of them work
+standalone.
+
+Before trusting it, test on the target machine by running from an already
+open console (not double-click), so any startup error stays visible
+instead of the window closing before you can read it:
+```
+cd path\to\PDF-Toolkit
+.\PDF-Toolkit.exe
+```
+Then specifically verify:
+- The menu appears without error
+- A setting changed via the Configuration Editor survives closing and
+  reopening the exe
+- OCR extraction succeeds against a scanned/image-only PDF (a PDF with a
+  text layer will skip OCR entirely and won't actually test Tesseract/Poppler)
+
+Ideally, run this test on a machine that has never had Python, Tesseract,
+Poppler, or Ghostscript installed — that's the only way to confirm the
+bundling is actually complete rather than being masked by tools already
+present on the build machine.
 
 ---
 
@@ -484,6 +623,20 @@ This is the printer driver's own status display during the Ghostscript job. It c
 
 **Printer spooler is unreachable**
 `safe_get_jobs()` will retry 3 times with a 5-second delay between attempts before returning an empty job list. If the printer is consistently unreachable, check that the print spooler service is running: `services.msc` → Print Spooler → Started.
+
+**Packaged `.exe` opens and closes immediately**
+Run it from an already-open console instead of double-clicking (`cd` into
+the folder, then `.\PDF-Toolkit.exe`) so any startup error stays on screen
+instead of vanishing when the window closes. A `ModuleNotFoundError: No
+module named 'modules'` here means the build was run without
+`--collect-submodules modules` — see [Building a Standalone
+Executable](#building-a-standalone-executable).
+
+**Packaged `.exe` runs but Configuration Editor changes don't persist**
+Confirms the exe was built with `--onefile` instead of `--onedir`, or that
+`configEditor.py`'s `_get_local_config_path()` is deriving its path from
+`config.__file__` instead of `config.BASE_DIR`. See [Building a Standalone
+Executable](#building-a-standalone-executable) for the correct setup.
 
 ---
 
