@@ -16,13 +16,45 @@ Example ``config_local.json``::
 
 import json
 import os
+import sys
+
+# ============================================================
+#  BASE DIRECTORY (works both from source and when frozen)
+# ============================================================
+# When PyInstaller builds a --onedir exe, sys.executable is the real,
+# stable exe path on disk (unlike sys._MEIPASS in --onefile, which is a
+# temp folder that gets deleted on exit). Everything bundled — vendor
+# tools, config_local.json — lives next to that exe.
+if getattr(sys, "frozen", False):
+    BASE_DIR = os.path.dirname(os.path.abspath(sys.executable))
+else:
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+VENDOR_DIR = os.path.join(BASE_DIR, "vendor")
 
 # ============================================================
 #  EXTERNAL TOOL PATHS
 # ============================================================
-TESSERACT_PATH = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
-POPPLER_PATH   = r"C:\poppler-26.02.0\Library\bin"
-GHOSTSCRIPT_PATH = r"C:\Program Files\gs\gs10.07.1\bin\gswin64c.exe"
+# Prefer the bundled copy in vendor/. Fall back to a normal machine
+# install if vendor/ isn't present (e.g. running from source on a dev
+# machine that already has these tools installed system-wide).
+_VENDOR_TESSERACT = os.path.join(VENDOR_DIR, "tesseract", "tesseract.exe")
+_VENDOR_POPPLER   = os.path.join(VENDOR_DIR, "poppler", "bin")
+_VENDOR_GS        = os.path.join(VENDOR_DIR, "ghostscript", "bin", "gswin64c.exe")
+
+TESSERACT_PATH = _VENDOR_TESSERACT if os.path.isfile(_VENDOR_TESSERACT) \
+    else r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+POPPLER_PATH = _VENDOR_POPPLER if os.path.isdir(_VENDOR_POPPLER) \
+    else r"C:\poppler-26.02.0\Library\bin"
+GHOSTSCRIPT_PATH = _VENDOR_GS if os.path.isfile(_VENDOR_GS) \
+    else r"C:\Program Files\gs\gs10.07.1\bin\gswin64c.exe"
+
+# Tesseract needs to find its tessdata folder (language files). If we're
+# using the bundled copy, point it there explicitly rather than relying
+# on tesseract's own relative-path guessing.
+_VENDOR_TESSDATA = os.path.join(VENDOR_DIR, "tesseract", "tessdata")
+if os.path.isdir(_VENDOR_TESSDATA):
+    os.environ["TESSDATA_PREFIX"] = _VENDOR_TESSDATA
 
 # ============================================================
 #  PDF PROCESSING DEFAULTS
@@ -61,7 +93,7 @@ MAX_ACTIVE_JOBS = 2
 # ============================================================
 #  OPTIONAL LOCAL OVERRIDES
 # ============================================================
-_LOCAL_CONFIG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config_local.json")
+_LOCAL_CONFIG = os.path.join(BASE_DIR, "config_local.json")
 if os.path.isfile(_LOCAL_CONFIG):
     try:
         with open(_LOCAL_CONFIG, encoding="utf-8") as _f:

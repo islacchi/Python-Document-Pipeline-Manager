@@ -1,6 +1,6 @@
+import json
 import os
 import sys
-import json
 
 try:
     import config
@@ -83,8 +83,7 @@ CATEGORIES = {
 
 def _get_local_config_path() -> str:
     # config.py location is the root of the project
-    config_dir = os.path.dirname(config.__file__)
-    return os.path.join(config_dir, "config_local.json")
+    return os.path.join(config.BASE_DIR, "config_local.json")
 
 def _load_local_overrides() -> dict:
     path = _get_local_config_path()
