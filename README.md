@@ -68,10 +68,10 @@ pip install pypdf pdfplumber openpyxl pywin32
 
 | Package    | Required by                     | Purpose                              |
 |------------|----------------------------------|---------------------------------------|
-| pypdf      | documentManager, brandReader     | Primary PDF text extraction          |
-| pdfplumber | documentManager, brandReader     | Fallback extraction for complex layouts |
-| openpyxl   | brandReader                      | Writing formatted Excel reports      |
-| pywin32    | batchPrinter                     | Windows printer spooler access       |
+| pypdf      | document_manager, brand_reader   | Primary PDF text extraction          |
+| pdfplumber | document_manager, brand_reader   | Fallback extraction for complex layouts |
+| openpyxl   | brand_reader                     | Writing formatted Excel reports      |
+| pywin32    | batch_printer                    | Windows printer spooler access       |
 
 ### Optional — OCR Support
 
