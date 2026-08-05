@@ -207,6 +207,22 @@ def file_hash(pdf_path: str) -> str | None:
         return h.hexdigest()
     except OSError:
         return None
+    
+# ── Checkpoint (resumability) ────────────────────────────────
+
+def _load_checkpoint(path: str) -> set[str]:
+    if not os.path.isfile(path):
+        return set()
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return {line.strip() for line in f if line.strip()}
+    except OSError:
+        return set()
+
+def _mark_done(fh, pdf_path: str) -> None:
+    fh.write(os.path.realpath(pdf_path) + "\n")
+    fh.flush()
+    os.fsync(fh.fileno())
 
 
 # ── Drive walk ───────────────────────────────────────────────────────────────
@@ -299,6 +315,8 @@ def process_file(args: tuple) -> dict:
 def run(search_root: str, dest_folder: str) -> None:
     os.makedirs(dest_folder, exist_ok=True)
     log_path = os.path.join(dest_folder, LOG_FILE)
+    checkpoint_path = os.path.join(dest_folder, config.CHECKPOINT_FILE)
+    already_done = _load_checkpoint(checkpoint_path)
 
     print(f"Scanning   : {search_root}")
     print(f"Destination: {dest_folder}")
@@ -307,6 +325,9 @@ def run(search_root: str, dest_folder: str) -> None:
     print(f"Keywords   : {KEYWORDS}")
     print(f"Threshold  : {MATCH_THRESHOLD} of {len(MATCHERS)} regex patterns")
     print(f"OCR        : {'enabled' if OCR_AVAILABLE else 'disabled (install pytesseract + pdf2image)'}\n")
+    if already_done:
+        print(f"Resuming   : {len(already_done)} file(s) already processed — skipping them")
+    print()
 
     seen_hashes: set[str] = set()  # tracks content hashes to skip true duplicates
     print("Walking file system and processing concurrently...\n")
@@ -322,59 +343,78 @@ def run(search_root: str, dest_folder: str) -> None:
     # Bypasses the GIL — CPU-bound PDF parsing and OCR run truly in parallel.
     duplicate_files = []
 
-    with ProcessPoolExecutor(max_workers=MAX_WORKERS) as executor:
-        futures: dict = {}
+    checkpoint_fh = open(checkpoint_path, "a", encoding="utf-8")
+    try:
 
-        # Stream paths from the walker directly into the pool as they are
-        # discovered — walk and process run concurrently instead of
-        # waiting for the full walk to finish before any work begins.
-        for pdf_path in all_pdfs:
+        with ProcessPoolExecutor(max_workers=MAX_WORKERS) as executor:
+            futures: dict = {}
 
-            # Duplicate check in main process (can't share sets across workers)
-            if SKIP_DUPLICATES:
-                h = file_hash(pdf_path)
-                if h is not None and h in seen_hashes:
-                    duplicate_files.append(pdf_path)
-                    total -= 1  # keep total count accurate
+            # Stream paths from the walker directly into the pool as they are
+            # discovered — walk and process run concurrently instead of
+            # waiting for the full walk to finish before any work begins.
+            for pdf_path in all_pdfs:
+
+                # Resume support: skip files a prior (interrupted) run already
+                # finished, before spending time on hashing or dispatch.
+                if os.path.realpath(pdf_path) in already_done:
                     continue
-                if h:
-                    seen_hashes.add(h)
 
-            total += 1
-            future = executor.submit(process_file, (pdf_path, dest_folder))
-            futures[future] = pdf_path
+                # Duplicate check in main process (can't share sets across workers)
+                if SKIP_DUPLICATES:
+                    h = file_hash(pdf_path)
+                    if h is not None and h in seen_hashes:
+                        duplicate_files.append(pdf_path)
+                        total -= 1  # keep total count accurate
+                        continue
+                    if h:
+                        seen_hashes.add(h)
 
-        # Drain completed futures
-        for future in as_completed(futures):
-            processed += 1
-            try:
-                r = future.result(timeout=FILE_TIMEOUT)
-            except FuturesTimeout:
-                path = futures[future]
-                error_files.append((path, "Timed out"))
-                print(f"  [TIMEOUT] ({processed}/{total})  {os.path.basename(path)}")
-                continue
-            except Exception as e:
-                path = futures[future]
-                error_files.append((path, str(e)))
-                print(f"  [ERROR]   ({processed}/{total})  {os.path.basename(path)}  → {e}")
-                continue
+                total += 1
+                future = executor.submit(process_file, (pdf_path, dest_folder))
+                futures[future] = pdf_path
 
-            bar = f"({processed}/{total})"
-            if r["error"] and not r["matched"]:
-                error_files.append((r["path"], r["error"]))
-                print(f"  [ERROR]   {bar}  {os.path.basename(r['path'])}  → {r['error']}")
-            elif r["matched"]:
-                matched_files.append((r["path"], r["dest"]))
-                action = "MOVED" if MOVE_FILES else "COPIED"
-                print(f"  [{action}]  {bar}  {os.path.basename(r['path'])}  [hits: {r['count']}]")
-            else:
-                skipped_files.append(r["path"])
-                if processed % 50 == 0:
-                    print(f"  [skip]    {bar}  (last: {os.path.basename(r['path'])})")
+            # Drain completed futures
+            for future in as_completed(futures):
+                processed += 1
+                try:
+                    r = future.result(timeout=FILE_TIMEOUT)
+                except FuturesTimeout:
+                    path = futures[future]
+                    error_files.append((path, "Timed out"))
+                    print(f"  [TIMEOUT] ({processed}/{total})  {os.path.basename(path)}")
+                    continue
+                except Exception as e:
+                    path = futures[future]
+                    error_files.append((path, str(e)))
+                    print(f"  [ERROR]   ({processed}/{total})  {os.path.basename(path)}  → {e}")
+                    continue
 
-        if duplicate_files:
-            print(f"\nSkipped {len(duplicate_files)} duplicate(s) (same content, different path).")
+                bar = f"({processed}/{total})"
+                if r["error"] and not r["matched"]:
+                    error_files.append((r["path"], r["error"]))
+                    print(f"  [ERROR]   {bar}  {os.path.basename(r['path'])}  → {r['error']}")
+                elif r["matched"]:
+                    matched_files.append((r["path"], r["dest"]))
+                    action = "MOVED" if MOVE_FILES else "COPIED"
+                    print(f"  [{action}]  {bar}  {os.path.basename(r['path'])}  [hits: {r['count']}]")
+                else:
+                    skipped_files.append(r["path"])
+                    if processed % 50 == 0:
+                        print(f"  [skip]    {bar}  (last: {os.path.basename(r['path'])})")
+
+            if duplicate_files:
+                print(f"\nSkipped {len(duplicate_files)} duplicate(s) (same content, different path).")
+                
+    except (KeyboardInterrupt, Exception):
+        checkpoint_fh.close()
+        print(f"\nInterrupted — re-run the same search/destination to resume.")
+        raise
+    else:
+        checkpoint_fh.close()
+        try:
+            os.remove(checkpoint_path)   # clean finish — resume no longer needed
+        except OSError:
+            pass
 
     # ── Write log ────────────────────────────────────────────
     with open(log_path, "w", encoding="utf-8") as log:
