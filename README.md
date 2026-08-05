@@ -38,14 +38,14 @@ project/
 ├── config.py                ← centralized settings for all modules
 └── modules/
     ├── __init__.py          ← marks modules/ as a Python package (intentionally empty)
-    ├── documentManager.py   ← scans a drive and copies matching PDFs
-    ├── brandReader.py        ← extracts brand name fields into Excel
-    ├── batchPrinter.py       ← batch prints PDFs to a physical printer
-    └── configEditor.py       ← interactive configuration settings editor
+    ├── document_manager.py  ← scans a drive and copies matching PDFs
+    ├── brand_reader.py      ← extracts brand name fields into Excel
+    ├── batch_printer.py     ← batch prints PDFs to a physical printer
+    └── config_editor.py     ← interactive configuration settings editor
 ```
 
-> Module files use the names above, matching the imports in `main.py`
-> (`modules.documentManager`, `modules.brandReader`, `modules.batchPrinter`, `modules.configEditor`).
+> Module files use snake_case names, matching the imports in `main.py`
+> (`modules.document_manager`, `modules.brand_reader`, `modules.batch_printer`, `modules.config_editor`).
 
 ---
 
@@ -181,7 +181,7 @@ instead of running.
 
 ---
 
-### 1. PDF Scanner (`modules/documentManager.py`)
+### 1. PDF Scanner (`modules/document_manager.py`)
 
 Recursively walks a drive or folder, identifies PDFs that match a configurable keyword and regex combination, and copies them to a destination folder.
 
@@ -211,7 +211,7 @@ Manufacturer:
 Importer / Distributor:
 ```
 
-To add keywords, append to the `KEYWORDS` list in `documentManager.py`.
+To add keywords, append to the `KEYWORDS` list in `document_manager.py`.
 To make matching stricter, raise `MATCH_THRESHOLD` in `config.py`.
 
 #### Text Extraction Fallback Chain
@@ -283,7 +283,7 @@ A `scan_results.txt` log is written to the destination folder containing:
 
 ---
 
-### 2. Brand Reader (`modules/brandReader.py`)
+### 2. Brand Reader (`modules/brand_reader.py`)
 
 Scans all PDFs in a single folder and extracts structured regulatory fields into a formatted Excel report.
 
@@ -303,6 +303,24 @@ Scans all PDFs in a single folder and extracts structured regulatory fields into
 
 Same as the PDF Scanner: pypdf → pdfplumber → OCR (Tesseract).
 
+#### Result Cache (Fingerprint-Based)
+
+On the first run, every PDF is processed and its results are cached. On
+subsequent runs, **unchanged files are served from the cache** — only new or
+modified files are re-extracted.
+
+- Each file is fingerprinted by its size and modification time
+  (`size:mtime_ns`, hashed with SHA-256)
+- The cache is stored as `.brand_cache.json` in the scanned folder
+- If an unchanged file previously produced an error, the cached error is
+  replayed instead of re-attempting extraction
+- The cache is updated automatically after every run
+- If the cache file is missing or corrupt, it is simply recreated — no user
+  action is needed
+
+This makes repeated runs over the same folder dramatically faster, since
+expensive PDF parsing and OCR are skipped for files that have not changed.
+
 #### Configuration
 
 All settings are in `config.py`:
@@ -315,6 +333,7 @@ All settings are in `config.py`:
 | `TEXT_THRESHOLD` | 50      | Minimum characters before trying next extractor |
 | `TESSERACT_PATH` | —       | Full path to `tesseract.exe`                    |
 | `POPPLER_PATH`   | —       | Full path to Poppler `bin` folder               |
+| `BRAND_CACHE_FILE` | `.brand_cache.json` | Cache filename for result reuse    |
 
 #### Output
 
@@ -332,9 +351,9 @@ A summary row at the bottom shows total counts for each section.
 
 ---
 
-### 3. Batch Print (`modules/batchPrinter.py`)
+### 3. Batch Print (`modules/batch_printer.py`)
 
-Sends the first page of all PDFs in a folder to a physical printer in natural sort order, with a live dashboard showing real-time print queue state.
+Sends a configurable page range of all PDFs in a folder to a physical printer in natural sort order, with a live dashboard showing real-time print queue state.
 
 > **Windows only.** This module requires `pywin32` and the Windows print spooler. It will not run on macOS or Linux.
 
@@ -348,11 +367,11 @@ Sends the first page of all PDFs in a folder to a physical printer in natural so
 2. PDFs are sorted in natural order (`cert2.pdf` before `cert10.pdf`)
 3. Before sending each file, the module checks the spooler — if
    `MAX_ACTIVE_JOBS` is already in the queue, it waits
-4. Page 1 of each file is sent via Ghostscript (`mswinpr2` device) in silent
-   mode. The job is forced to Letter paper and the page content is scaled to
-   fit (`-sPAPERSIZE=letter`, `-dFIXEDMEDIA`, `-dPDFFitPage`), which resolves
-   A4/Letter paper-size mismatches when source PDFs are A4-sized but the
-   printer tray is loaded with Letter
+4. The configured page range of each file is sent via Ghostscript
+   (`mswinpr2` device) in silent mode. The job is forced to Letter paper and
+   the page content is scaled to fit (`-sPAPERSIZE=letter`, `-dFIXEDMEDIA`,
+   `-dPDFFitPage`), which resolves A4/Letter paper-size mismatches when
+   source PDFs are A4-sized but the printer tray is loaded with Letter
 5. The spooler job ID is captured by comparing job lists before and after
    sending — if Ghostscript completes the job too quickly for the spooler to
    register it, the file is marked complete immediately rather than left
@@ -370,14 +389,22 @@ All settings are in `config.py`:
 | `PRINTER_NAME`     | `DocuPrint M455 df`     | Exact printer name as registered in Windows — verified automatically at the start of every run |
 | `GHOSTSCRIPT_PATH` | —                       | Full path to `gswin64c.exe` (e.g. `C:\Program Files\gs\gs10.07.1\bin\gswin64c.exe`) |
 | `MAX_ACTIVE_JOBS`  | 2                       | Maximum concurrent spooler jobs before waiting |
+| `PRINT_FIRST_PAGE` | 1                       | First page of each PDF to print (1-based)      |
+| `PRINT_LAST_PAGE`  | 1                       | Last page of each PDF to print (0 = last page of document) |
 
 To find the exact printer name: open **Settings → Bluetooth & devices →
 Printers & scanners**, click the printer, and copy the name exactly as
 displayed. If `PRINTER_NAME` doesn't match, the next run will print the full
 list of registered names so you can correct it.
 
-> `SUMATRA_PATH` remains defined in `config.py` for backward compatibility
-> but is no longer used by `batchPrinter`.
+**Page range tips:**
+- `PRINT_FIRST_PAGE = 1`, `PRINT_LAST_PAGE = 1` (default) — prints only page 1,
+  intended for cover-page/letterhead printing
+- `PRINT_FIRST_PAGE = 1`, `PRINT_LAST_PAGE = 0` — prints the full document
+- `PRINT_FIRST_PAGE = 2`, `PRINT_LAST_PAGE = 5` — prints pages 2 through 5
+
+You can adjust the page range via the Configuration Editor under
+**Batch Printer Settings**, or directly in `config.py`.
 
 #### Output
 
@@ -385,7 +412,7 @@ A `print_history.txt` log is written to the PDF source folder on completion, lis
 
 ---
 
-### 4. Configuration Editor (`modules/configEditor.py`)
+### 4. Configuration Editor (`modules/config_editor.py`)
 
 An interactive, menu-driven CLI configuration editor. It allows you to view, validate, and customize all toolkit settings dynamically without manually editing Python files.
 
@@ -403,14 +430,14 @@ An interactive, menu-driven CLI configuration editor. It allows you to view, val
 | **1. Global & Concurrency Settings** | General execution limits. | `MAX_WORKERS`, `MAX_PAGES` |
 | **2. PDF Scanner Settings** | PDF scanning paths and thresholds. | `SEARCH_ROOT`, `DEST_FOLDER`, `SCAN_LOG_FILE`, `MATCH_THRESHOLD`, `MOVE_FILES`, `SKIP_DUPLICATES`, `SKIP_HIDDEN`, `MIN_FILE_SIZE`, `MAX_FILE_SIZE`, `FILE_TIMEOUT` |
 | **3. Brand Reader Settings** | Brand reader extraction reporting. | `BRAND_LOG_FILE` |
-| **4. Batch Printer Settings** | Printer target configuration. | `PRINTER_NAME`, `MAX_ACTIVE_JOBS`, `GHOSTSCRIPT_PATH` |
+| **4. Batch Printer Settings** | Printer target and page-range configuration. | `PRINTER_NAME`, `MAX_ACTIVE_JOBS`, `GHOSTSCRIPT_PATH`, `PRINT_FIRST_PAGE`, `PRINT_LAST_PAGE` |
 | **5. OCR Engine Settings** | External binaries and OCR DPI. | `TESSERACT_PATH`, `POPPLER_PATH`, `OCR_DPI`, `OCR_DPI_HIGH`, `TEXT_THRESHOLD` |
 
 ---
 
 ## Adding a New Module
 
-1. Create `modules/yourModule.py` with a `run()` function:
+1. Create `modules/your_module.py` with a `run()` function:
    ```python
    def run(folder_path: str) -> None:
        # your logic here
@@ -418,7 +445,7 @@ An interactive, menu-driven CLI configuration editor. It allows you to view, val
 
 2. In `main.py`, import it with `_try_import` (returns `None` if dependencies are missing, rather than crashing):
    ```python
-   your_module = _try_import("modules.yourModule")
+   your_module = _try_import("modules.your_module")
    ```
 
 3. Add an entry to `MENU_ENTRIES`:
@@ -469,6 +496,9 @@ OCR is optional. If not installed, the toolkit falls back to text-only extractio
 - Check if the PDF is image-based — if so, OCR must be installed
 - `OCR_DPI_HIGH` (default 300) is used for brand extraction; raise it for low-quality scans
 
+**Brand reader processed nothing on a re-run**
+This is expected — unchanged files are served from the cache (`.brand_cache.json` in the scanned folder). Only new or modified files are re-processed. Delete the cache file to force a full re-extraction.
+
 **`❌ Ghostscript not found at: ...`**
 Update `GHOSTSCRIPT_PATH` in `config.py` — the version folder name (e.g. `gs10.07.1`) changes with each Ghostscript release, so this needs updating after upgrades.
 
@@ -490,8 +520,8 @@ This is the printer driver's own status display during the Ghostscript job. It c
 ## Notes
 
 - `MOVE_FILES = False` by default. Always verify results in copy mode first.
-- `batchPrinter.py` is Windows-only. It will not run on macOS or Linux.
+- `batch_printer.py` is Windows-only. It will not run on macOS or Linux.
 - OCR is optional across all modules. Missing `pytesseract`/`pdf2image` prints a warning but does not prevent the toolkit from running.
-- All state in `batchPrinter` is scoped to each `run()` call — running batch print twice in one session starts completely clean.
+- All state in `batch_printer` is scoped to each `run()` call — running batch print twice in one session starts completely clean.
 - The destination folder in the PDF Scanner is automatically excluded from the walk even when it is inside the search root, preventing an infinite copy loop.
-- Batch Print prints only **page 1** of each PDF by design (`-dFirstPage=1 -dLastPage=1`), intended for cover-page/letterhead printing rather than full-document printing.
+- Batch Print defaults to printing only **page 1** of each PDF (`PRINT_FIRST_PAGE=1`, `PRINT_LAST_PAGE=1`), intended for cover-page/letterhead printing. Set `PRINT_LAST_PAGE=0` to print full documents, or adjust both values to print a custom range.
