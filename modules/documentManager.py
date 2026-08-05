@@ -56,20 +56,9 @@ except ImportError:
 # A PDF qualifies only when BOTH conditions are true:
 #   1. At least ONE keyword in KEYWORDS is found in the text (case-insensitive)
 #   2. At least MATCH_THRESHOLD of the MATCHERS regex patterns also match
-KEYWORDS = [
-    
-    "Certificate of Product Registration",
-    "Certificate of Listing of Identical Drug Product",
-]
+KEYWORDS = config.MATCH_KEYWORDS
 
-MATCHERS = [
-    re.compile(r'Brand\s*Name\s*[:\-]',                                 re.IGNORECASE),
-    re.compile(r'Registration\s*Number\s*[:\-]\s*[A-Z0-9\-]+',         re.IGNORECASE),
-    re.compile(r'FDA\s+Registration\s+No\.?\s*[:\-]\s*[A-Z0-9\-]+',    re.IGNORECASE),
-    re.compile(r'valid\s+until\s+\d{1,2}\s+\w+\s+\d{4}',               re.IGNORECASE),
-    re.compile(r'Manufacturer\s*[:\-\d]',                                re.IGNORECASE),
-    re.compile(r'Importer\s*(?:/\s*Distributor)?\s*[:\-\d]',            re.IGNORECASE),
-]
+MATCHERS = [re.compile(p, re.IGNORECASE) for p in config.MATCH_PATTERNS]
 
 # How many regex patterns must match (in addition to all keywords)
 MATCH_THRESHOLD = config.MATCH_THRESHOLD
