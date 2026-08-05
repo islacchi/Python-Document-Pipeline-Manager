@@ -25,8 +25,10 @@ def _try_import(module_path: str):
     """Import a module, returning *None* if its dependencies are missing."""
     try:
         return importlib.import_module(module_path)
-    except SystemExit:
-        # Some modules call sys.exit(1) on ImportError — treat as unavailable
+    except (SystemExit, Exception):
+        # SystemExit: module called sys.exit(1) on missing deps
+        # Exception:  any other import-time failure (bug, bad config, syntax)
+        # Either way, treat the module as unavailable rather than crashing.
         return None
 
 
