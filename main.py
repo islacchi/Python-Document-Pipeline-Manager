@@ -1,7 +1,7 @@
-import sys
-import os
-import logging
 import importlib
+import logging
+import os
+import sys
 
 # ── Logging setup ──────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -12,7 +12,7 @@ logging.basicConfig(
 logger = logging.getLogger("toolkit")
 
 # ── Config ─────────────────────────────────────────────────────────────────────
-import config  # noqa: E402, F401
+import config  # noqa: F401
 
 # ── Module registry ───────────────────────────────────────────────────────────
 # To add a new feature:
@@ -30,10 +30,10 @@ def _try_import(module_path: str):
         return None
 
 
-pdf_scanner   = _try_import("modules.documentManager")
-brand_reader  = _try_import("modules.brandReader")
-batch_print   = _try_import("modules.batchPrinter")
-config_editor = _try_import("modules.configEditor")
+pdf_scanner   = _try_import("modules.document_manager")
+brand_reader  = _try_import("modules.brand_reader")
+batch_print   = _try_import("modules.batch_printer")
+config_editor = _try_import("modules.config_editor")
 
 # ── Menu definitions ──────────────────────────────────────────────────────────
 # Each entry is (label, module_or_None, launcher_func_or_None).

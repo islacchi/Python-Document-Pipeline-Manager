@@ -1,10 +1,11 @@
-import sys
-import re
-import os
-import shutil
 import hashlib
+import os
+import re
+import shutil
+import sys
+from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import TimeoutError as FuturesTimeout
 from datetime import datetime
-from concurrent.futures import ProcessPoolExecutor, as_completed, TimeoutError as FuturesTimeout
 
 # Dynamic path config resolution
 try:
@@ -15,8 +16,8 @@ except ImportError:
 
 missing = []
 try:
+    import pdfplumber  # type: ignore[import-not-found]
     from pypdf import PdfReader
-    import pdfplumber
 except ImportError:
     missing.append("pypdf pdfplumber")
 
@@ -45,8 +46,8 @@ OCR_DPI         = config.OCR_DPI
 # ============================================================
 
 try:
-    import pytesseract
-    from pdf2image import convert_from_path
+    import pytesseract  # type: ignore[import-not-found]
+    from pdf2image import convert_from_path  # type: ignore[import-not-found]
     pytesseract.pytesseract.tesseract_cmd = TESSERACT_PATH
     OCR_AVAILABLE = True
 except ImportError:
@@ -167,7 +168,9 @@ def is_match(pdf_path: str) -> tuple[bool, int, str | None]:
 
         return False, 0, None
 
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 — deliberate: malformed PDFs from
+        # pypdf/pdfplumber/pytesseract can raise unpredictable internal
+        # exception types; one bad file must not crash the whole scan.
         return False, 0, str(e)
 
 
@@ -177,11 +180,7 @@ def is_match(pdf_path: str) -> tuple[bool, int, str | None]:
 def size_ok(pdf_path: str) -> bool:
     try:
         size = os.path.getsize(pdf_path)
-        if size < MIN_FILE_SIZE:
-            return False
-        if MAX_FILE_SIZE and size > MAX_FILE_SIZE:
-            return False
-        return True
+        return size >= MIN_FILE_SIZE and not (MAX_FILE_SIZE and size > MAX_FILE_SIZE)
     except OSError:
         return False
 
@@ -304,7 +303,7 @@ def process_file(args: tuple) -> dict:
     if matched and not error:
         try:
             result["dest"] = transfer_file(pdf_path, dest_folder)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             result["error"] = f"Transfer failed: {e}"
             result["matched"] = False
     return result
@@ -343,7 +342,7 @@ def run(search_root: str, dest_folder: str) -> None:
     # Bypasses the GIL — CPU-bound PDF parsing and OCR run truly in parallel.
     duplicate_files = []
 
-    checkpoint_fh = open(checkpoint_path, "a", encoding="utf-8")
+    checkpoint_fh = open(checkpoint_path, "a", encoding="utf-8")  # noqa: SIM115
     try:
 
         with ProcessPoolExecutor(max_workers=MAX_WORKERS) as executor:
@@ -383,7 +382,7 @@ def run(search_root: str, dest_folder: str) -> None:
                     error_files.append((path, "Timed out"))
                     print(f"  [TIMEOUT] ({processed}/{total})  {os.path.basename(path)}")
                     continue
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     path = futures[future]
                     error_files.append((path, str(e)))
                     print(f"  [ERROR]   ({processed}/{total})  {os.path.basename(path)}  → {e}")
@@ -404,10 +403,10 @@ def run(search_root: str, dest_folder: str) -> None:
 
             if duplicate_files:
                 print(f"\nSkipped {len(duplicate_files)} duplicate(s) (same content, different path).")
-                
+
     except (KeyboardInterrupt, Exception):
         checkpoint_fh.close()
-        print(f"\nInterrupted — re-run the same search/destination to resume.")
+        print("\nInterrupted — re-run the same search/destination to resume.")
         raise
     else:
         checkpoint_fh.close()
@@ -419,7 +418,7 @@ def run(search_root: str, dest_folder: str) -> None:
     # ── Write log ────────────────────────────────────────────
     with open(log_path, "w", encoding="utf-8") as log:
         log.write(f"PDF Scan & {'Move' if MOVE_FILES else 'Copy'} Report\n")
-        log.write(f"Run at    : {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+        log.write(f"Run at    : {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")  # noqa: DTZ005
         log.write(f"Root      : {os.path.abspath(search_root)}\n")
         log.write(f"Dest      : {os.path.abspath(dest_folder)}\n")
         log.write(f"Mode      : {'MOVE' if MOVE_FILES else 'COPY'}\n")
@@ -429,23 +428,19 @@ def run(search_root: str, dest_folder: str) -> None:
 
         log.write(f"MATCHED & TRANSFERRED ({len(matched_files)})\n")
         log.write("-" * 70 + "\n")
-        for src, dst in matched_files:
-            log.write(f"  SRC: {src}\n  DST: {dst}\n\n")
+        log.writelines(f"  SRC: {src}\n  DST: {dst}\n\n" for src, dst in matched_files)
 
         log.write(f"\nSKIPPED — no match ({len(skipped_files)})\n")
         log.write("-" * 70 + "\n")
-        for path in skipped_files:
-            log.write(f"  {path}\n")
+        log.writelines(f"  {path}\n" for path in skipped_files)
 
         log.write(f"\nDUPLICATES SKIPPED ({len(duplicate_files)})\n")
         log.write("-" * 70 + "\n")
-        for path in duplicate_files:
-            log.write(f"  {path}\n")
+        log.writelines(f"  {path}\n" for path in duplicate_files)
 
         log.write(f"\nERRORS ({len(error_files)})\n")
         log.write("-" * 70 + "\n")
-        for path, err in error_files:
-            log.write(f"  {path}\n  → {err}\n\n")
+        log.writelines(f"  {path}\n  → {err}\n\n" for path, err in error_files)
 
         log.write("\n" + "=" * 70 + "\n")
         log.write(f"Total scanned : {total}\n")
