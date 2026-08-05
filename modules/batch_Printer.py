@@ -1,9 +1,9 @@
 import os
-import time
-import subprocess
 import re
+import subprocess
+import time
 
-from config import PRINTER_NAME, GHOSTSCRIPT_PATH, MAX_ACTIVE_JOBS
+from config import GHOSTSCRIPT_PATH, MAX_ACTIVE_JOBS, PRINTER_NAME
 
 try:
     import win32print
@@ -67,7 +67,7 @@ def print_pdf(pdf_path: str) -> None:
     startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
     startupinfo.wShowWindow = subprocess.SW_HIDE
 
-    result = subprocess.run([
+    result = subprocess.run([  # noqa: PLW1510
         GHOSTSCRIPT_PATH,
         "-q",
         "-dNoCancel",
@@ -97,7 +97,7 @@ def safe_get_jobs(retries: int = 3) -> list:
     for attempt in range(retries):
         try:
             return get_jobs()
-        except Exception:
+        except Exception:  # noqa: BLE001
             if attempt < retries - 1:
                 time.sleep(5)
     return []
@@ -116,8 +116,7 @@ def log_history(pdf_folder: str, statuses: dict, errors: dict) -> str:
         fh.write(f"Printer: {PRINTER_NAME}\n")
         fh.write("-" * 40 + "\n")
         fh.write(f"Sent ({len(sent)}):\n")
-        for i, name in enumerate(sent, 1):
-            fh.write(f"   {i}. {name}\n")
+        fh.writelines(f"   {i}. {name}\n" for i, name in enumerate(sent, 1))
         if failed:
             fh.write(f"\nFailed ({len(failed)}):\n")
             for i, name in enumerate(failed, 1):
@@ -202,7 +201,7 @@ def _validate_environment() -> bool:
         printers = [p[2] for p in win32print.EnumPrinters(
             win32print.PRINTER_ENUM_LOCAL | win32print.PRINTER_ENUM_CONNECTIONS, None, 1
         )]
-    except Exception:
+    except Exception:  # noqa: BLE001
         print("  Could not enumerate printers. Ensure the print spooler service is running.")
         return False
 
@@ -269,7 +268,7 @@ def run(pdf_folder: str) -> None:
         except subprocess.CalledProcessError as e:
             statuses[file] = STATUS_FAILED
             errors[file]   = _translate_gs_error(e.stderr or "")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             statuses[file] = STATUS_FAILED
             errors[file]   = f"Unexpected error: {type(e).__name__}"
 

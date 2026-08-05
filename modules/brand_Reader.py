@@ -1,3 +1,5 @@
+import hashlib
+import json
 import os
 import re
 import sys
@@ -105,6 +107,28 @@ def clean_field(raw: str) -> str | None:
     raw = re.split(r'[\n\r\t|]', raw.strip())[0].strip()
     raw = re.sub(r'^[\s:\-]+', '', raw).strip()
     return raw if raw else None
+
+# ── Cache (fingerprint-based) ────────────────────────────────────────────────
+
+def _file_fingerprint(pdf_path: str) -> str:
+    stat = os.stat(pdf_path)
+    return hashlib.sha256(f"{stat.st_size}:{stat.st_mtime_ns}".encode()).hexdigest()
+
+def load_cache(cache_path: str) -> dict:
+    if not os.path.isfile(cache_path):
+        return {}
+    try:
+        with open(cache_path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+def save_cache(cache_path: str, cache: dict) -> None:
+    try:
+        with open(cache_path, "w", encoding="utf-8") as f:
+            json.dump(cache, f)
+    except OSError as e:
+        print(f"Warning: could not write cache file — {e}")
 
 # ── Field extractors ─────────────────────────────────────────────────────────
 
@@ -297,15 +321,44 @@ def run(folder_path: str) -> None:
         print(f"No PDF files found in: {folder_path}")
         return
 
-    print(f"Processing {len(pdf_files)} PDF(s) with {MAX_WORKERS} workers...\n")
+    # ── Cache: skip unchanged files ──────────────────────────
+    cache_path = os.path.join(folder_path, config.BRAND_CACHE_FILE)
+    cache = load_cache(cache_path)
+    fingerprints = {f: _file_fingerprint(os.path.join(folder_path, f)) for f in pdf_files}
+    to_process = [f for f in pdf_files
+                  if f not in cache or cache[f].get("fingerprint") != fingerprints[f]]
 
     results = {}
-    with ProcessPoolExecutor(max_workers=MAX_WORKERS) as executor:
-        futures = {executor.submit(process_pdf, folder_path, f): f for f in pdf_files}
-        for future in as_completed(futures):
-            filename, fields, error = future.result()
-            results[filename] = (fields, error)
-            print(f"{'✓' if fields and fields.get('brand') else '✗'} {filename}")
+    cached_count = 0
+    for f in pdf_files:
+        if f not in to_process:
+            entry = cache[f]
+            results[f] = (entry.get("fields"), entry.get("error"))
+            cached_count += 1
+
+    if cached_count:
+        print(f"Using cached results for {cached_count} unchanged file(s).")
+
+    if to_process:
+        print(f"Processing {len(to_process)} PDF(s) with {MAX_WORKERS} workers...\n")
+        with ProcessPoolExecutor(max_workers=MAX_WORKERS) as executor:
+            futures = {executor.submit(process_pdf, folder_path, f): f for f in to_process}
+            for future in as_completed(futures):
+                filename, fields, error = future.result()
+                results[filename] = (fields, error)
+                print(f"{'✓' if fields and fields.get('brand') else '✗'} {filename}")
+    else:
+        print("All files unchanged — nothing to process.")
+
+    # ── Update and save cache ────────────────────────────────
+    for f in to_process:
+        fields, error = results[f]
+        cache[f] = {
+            "fingerprint": fingerprints[f],
+            "fields": fields,
+            "error": error,
+        }
+    save_cache(cache_path, cache)
 
     write_excel(log_path, folder_path, pdf_files, results)
 

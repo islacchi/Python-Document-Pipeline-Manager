@@ -1,6 +1,6 @@
+import json
 import os
 import sys
-import json
 
 try:
     import config
@@ -92,7 +92,7 @@ def _load_local_overrides() -> dict:
         try:
             with open(path, "r", encoding="utf-8") as f:
                 return json.load(f)
-        except Exception:
+        except Exception:  # noqa: BLE001
             return {}
     return {}
 
@@ -101,7 +101,7 @@ def _save_local_overrides(overrides: dict) -> None:
     try:
         with open(path, "w", encoding="utf-8") as f:
             json.dump(overrides, f, indent=4)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"Error saving config_local.json: {e}")
 
 def _sync_session_config(key: str, val) -> None:
@@ -121,7 +121,7 @@ def _prompt_edit(display_name: str, key: str, type_converter, validator, help_te
     current_val = getattr(config, key, None)
     print(f"\nEditing: {display_name} ({key})")
     print(f"Description: {help_text}")
-    print(f"Current Value: {repr(current_val)}")
+    print(f"Current Value: {current_val!r}")
     
     val_input = input("Enter new value (or press Enter to cancel): ").strip()
     if not val_input:
@@ -179,7 +179,7 @@ def run() -> None:
             for idx, item in enumerate(category["items"], 1):
                 display_name, key, _, _, _ = item
                 val = getattr(config, key, None)
-                print(f"  {idx}. {display_name:<36} : {repr(val)}")
+                print(f"  {idx}. {display_name:<36} : {val!r}")
             print("  0. Back")
             print("─" * 55)
             
