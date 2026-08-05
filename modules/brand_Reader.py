@@ -1,8 +1,8 @@
-import sys
-import re
 import os
+import re
+import sys
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from datetime import datetime
-from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # Dynamic path config resolution
 try:
@@ -14,13 +14,13 @@ except ImportError:
 missing = []
 try:
     from openpyxl import Workbook
-    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 except ImportError:
     missing.append("openpyxl")
 
 try:
-    from pypdf import PdfReader
     import pdfplumber
+    from pypdf import PdfReader
 except ImportError:
     missing.append("pypdf pdfplumber")
 
@@ -156,7 +156,7 @@ def process_pdf(folder_path: str, filename: str) -> tuple:
             "distributor":  extract_distributor(text),
         }
         return (filename, fields, None)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         return (filename, None, str(e))
 
 # ── Excel writer ──────────────────────────────────────────────────────────────
@@ -198,7 +198,7 @@ def write_excel(log_path: str, folder_path: str, pdf_files: list, results: dict)
     ws.merge_cells("A1:M1")
     ws["A1"] = (
         f"Brand Name Extraction  |  Folder: {os.path.abspath(folder_path)}"
-        f"  |  Run at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        f"  |  Run at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"  # noqa: DTZ005
         f"  |  OCR: {'enabled' if OCR_AVAILABLE else 'disabled'}"
     )
     ws["A1"].font      = Font(name="Arial", size=9, italic=True, color="555555")
@@ -300,7 +300,7 @@ def run(folder_path: str) -> None:
     print(f"Processing {len(pdf_files)} PDF(s) with {MAX_WORKERS} workers...\n")
 
     results = {}
-    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+    with ProcessPoolExecutor(max_workers=MAX_WORKERS) as executor:
         futures = {executor.submit(process_pdf, folder_path, f): f for f in pdf_files}
         for future in as_completed(futures):
             filename, fields, error = future.result()
