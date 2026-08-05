@@ -66,7 +66,9 @@ CATEGORIES = {
         "items": [
             ("Target Windows Printer Name", "PRINTER_NAME", str, lambda v: True, "Must match exact registered Windows printer name"),
             ("Max Active Print Jobs in Queue", "MAX_ACTIVE_JOBS", int, _validate_positive_int, "Saves memory by pausing loop when spooler is full"),
-            ("Ghostscript Command Path", "GHOSTSCRIPT_PATH", str, _validate_path_file, "Expects full path to gswin64c.exe")
+            ("Ghostscript Command Path", "GHOSTSCRIPT_PATH", str, _validate_path_file, "Expects full path to gswin64c.exe"),
+            ("First Page to Print", "PRINT_FIRST_PAGE", int, _validate_positive_int, "First page of each PDF to print (1 = first page)"),
+            ("Last Page to Print", "PRINT_LAST_PAGE", int, _validate_positive_int, "Last page of each PDF to print (0 = last page)")
         ]
     },
     5: {
@@ -110,7 +112,7 @@ def _sync_session_config(key: str, val) -> None:
     setattr(config, key, val)
     
     # 2. Update variables in loaded pipeline modules
-    modules_to_sync = ["modules.documentManager", "modules.brandReader", "modules.batchPrinter"]
+    modules_to_sync = ["modules.document_manager", "modules.brand_reader", "modules.batch_printer"]
     for mod_name in modules_to_sync:
         if mod_name in sys.modules:
             mod = sys.modules[mod_name]

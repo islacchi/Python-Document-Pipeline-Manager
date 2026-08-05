@@ -3,7 +3,13 @@ import re
 import subprocess
 import time
 
-from config import GHOSTSCRIPT_PATH, MAX_ACTIVE_JOBS, PRINTER_NAME
+from config import (
+    GHOSTSCRIPT_PATH,
+    MAX_ACTIVE_JOBS,
+    PRINT_FIRST_PAGE,
+    PRINT_LAST_PAGE,
+    PRINTER_NAME,
+)
 
 try:
     import win32print
@@ -77,7 +83,7 @@ def print_pdf(pdf_path: str) -> None:
         "-sPAPERSIZE=letter",
         "-dFIXEDMEDIA",
         "-dPDFFitPage",
-        "-dFirstPage=1", "-dLastPage=1",
+        f"-dFirstPage={PRINT_FIRST_PAGE}", f"-dLastPage={PRINT_LAST_PAGE}",
         pdf_path
     ], capture_output=True, text=True,
        startupinfo=startupinfo,
@@ -154,7 +160,7 @@ def render_dashboard(pdfs: list, statuses: dict, jobs: list) -> None:
     # ── Header ────────────────────────────────────────────────────────────────
     print("  Batch print\n")
     print(f"  Printer : {PRINTER_NAME}")
-    print("  Settings: Letter · page 1 only · natural sort")
+    print(f"  Settings: Letter · pages {PRINT_FIRST_PAGE}-{PRINT_LAST_PAGE} · natural sort")
     print()
 
     # ── Metrics ───────────────────────────────────────────────────────────────
